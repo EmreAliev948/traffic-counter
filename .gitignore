@@ -7,6 +7,5 @@ manual/
 *.pt
 reports/
 tests/
-traffic/dashboard.py
 traffic/analysis.py
 *.pdf

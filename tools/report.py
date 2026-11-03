@@ -3,8 +3,8 @@
     python -m tools.report [--from 2026-10-20] [--to 2026-10-26] [--camera 2 --camera 5] [--out reports]
 
 Dates are local days (config timezone), both inclusive; default = the last 7 days.
-Only aggregated counts are drawn - no video frames are involved. Uses the same
-coverage-aware analysis as the dashboard (traffic/analysis.py).
+Only aggregated counts are drawn - no video frames are involved. Uses the
+coverage-aware analysis in traffic/analysis.py.
 """
 
 from __future__ import annotations

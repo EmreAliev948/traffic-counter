@@ -1,4 +1,4 @@
-"""Command line: python -m traffic run | dashboard | calibrate | manual-count | evaluate | report."""
+"""Command line: python -m traffic run | calibrate | manual-count | evaluate | report."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ def main(argv: list[str] | None = None) -> int:
     run = sub.add_parser("run", help="count traffic on all enabled cameras")
     run.add_argument("--only", help="comma-separated camera ids (also runs disabled ones)")
     run.add_argument("--preview", action="store_true", help="show a live window (nothing is saved)")
-    sub.add_parser("dashboard", help="open the Streamlit dashboard")
     for name in TOOLS:
         sub.add_parser(name, help=f"same as python -m tools.{name.replace('-', '_')}", add_help=False)
 
@@ -31,9 +30,6 @@ def main(argv: list[str] | None = None) -> int:
         return subprocess.call([sys.executable, "-m", tool, "--config", args.config, *rest], cwd=ROOT)
     if rest:
         parser.error(f"unrecognized arguments: {' '.join(rest)}")
-    if args.command == "dashboard":
-        app = Path(__file__).with_name("dashboard.py")
-        return subprocess.call([sys.executable, "-m", "streamlit", "run", str(app), "--", "--config", args.config])
 
     setup_logging()
     try:

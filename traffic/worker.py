@@ -222,7 +222,7 @@ def run_camera(cam: Camera, defaults: Defaults, stop: StopSignal, threads: int, 
         stop.set()  # a normal return means 'q' in the preview window: end the whole run
     finally:
         try:
-            # Marks the end of the covered period, so the dashboard shows "stopped" instead
+            # Marks the end of the covered period, so the report shows "stopped" instead
             # of silently treating the time after it as zero traffic.
             db.insert_health(conn, cam.id, "stopped")
         except sqlite3.Error as err:

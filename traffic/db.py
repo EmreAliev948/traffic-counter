@@ -1,6 +1,6 @@
 """SQLite storage: schema, connections, batched inserts and the queries used by the tools.
 
-WAL mode lets one reader (the dashboard) and several writers (one per camera process)
+WAL mode lets one reader (the report) and several writers (one per camera process)
 work at the same time; busy_timeout makes a writer wait for the lock instead of failing.
 """
 

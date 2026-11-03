@@ -15,7 +15,7 @@ you draw on the picture. For each crossing it also records the direction ("in" o
 
 - Only the counts are saved (time, camera, type of object, direction).
 - **No video and no pictures are ever saved.**
-- You can view the results in a web dashboard or export charts for your report.
+- You can export charts and tables for your report.
 
 ---
 
@@ -52,7 +52,6 @@ The first time the program runs, it downloads the AI model (about 5 MB) by itsel
 | Tool | What it is for | Command |
 |---|---|---|
 | **Counter** | Watches the cameras and counts traffic. Leave it running. | `python -m traffic run` |
-| **Dashboard** | Web page with numbers, charts and outages | `python -m traffic dashboard` |
 | **Calibrate** | Draw the counting line for a camera with two mouse clicks | `python -m traffic calibrate <camera>` |
 | **Manual counter** | Count traffic yourself by pressing keys (used to check accuracy) | `python -m traffic manual-count <camera>` |
 | **Evaluate** | Compare your manual count with the automatic count | `python -m traffic evaluate <file.csv>` |
@@ -128,36 +127,7 @@ The counts are saved in `data/traffic.db`.
 
 ---
 
-## 7. Dashboard – view the results
-
-```bash
-python -m traffic dashboard
-```
-
-It opens in your browser at **http://localhost:8501**. You can run it while the counter is running.
-
-In the left sidebar you choose:
-
-- the **period** (dates)
-- the **cameras**
-- which hours count as **day** (default 07:00–19:00)
-
-The dashboard shows:
-
-| Section | What you see |
-|---|---|
-| Key numbers | Total crossings, "in" and "out" totals, how many hours the cameras actually worked, and the average per hour |
-| Crossings per hour | A line per vehicle type. **A gap in the line means the camera was not working** (not zero traffic). |
-| By class / by direction | Bar charts of vehicle types and directions |
-| Heatmap | Busy hours for each day of the week. Empty cells = no data. |
-| Comparisons | Day vs night and weekday vs weekend, plus the share of each vehicle type |
-| Time-series breakdown | Splits traffic into the long-term trend, the daily pattern, the weekly pattern and what is left over. Needs at least 2 days of data (14 days for the weekly pattern). |
-| Anomalies | Hours with unusually high or low traffic |
-| Outages | When each camera was not working, and why (stream dropped, program stopped, …) |
-
----
-
-## 8. Checking accuracy (manual count + evaluate)
+## 7. Checking accuracy (manual count + evaluate)
 
 This shows how close the automatic count is to a human count. You need it for the report.
 **The target is less than 10 % error for cars in daylight.**
@@ -218,7 +188,7 @@ Optional settings for evaluate:
 
 ---
 
-## 9. Report – charts and tables for the written part
+## 8. Report – charts and tables for the written part
 
 ```bash
 python -m traffic report                                        # last 7 days, all cameras
@@ -251,21 +221,21 @@ Options:
 
 ---
 
-## 10. Recommended plan for the course project
+## 9. Recommended plan for the course project
 
 1. **Setup** (section 2).
 2. **Check the cameras.** Run `python -m traffic run --only 2 --preview` and make sure
    the line is in a good place. If not, re-run **Calibrate**.
 3. **Start counting** with `python -m traffic run` and leave it running for **7–14 days**.
    The computer must stay on and must not go to sleep.
-4. **During that week**, do the **manual counts** (section 8): each camera, day and night.
-5. **Check progress** at any time with the **Dashboard**.
+4. **During that week**, do the **manual counts** (section 7): each camera, day and night.
+5. **Check progress** at any time with the **Report**.
 6. **At the end**, run **Evaluate** with `--summary` and then **Report**, and put the
    pictures and tables into the written part.
 
 ---
 
-## 11. Other commands
+## 10. Other commands
 
 | Command | What it does |
 |---|---|
@@ -276,7 +246,7 @@ Options:
 
 ---
 
-## 12. Common problems
+## 11. Common problems
 
 | Problem | What to do |
 |---|---|
@@ -285,7 +255,7 @@ Options:
 | YouTube cameras stop opening | Update the downloader with `pip install -U yt-dlp` |
 | The computer is too slow | In `config.yaml`, raise `vid_stride` (for example to 3) or run fewer cameras |
 | Counts look wrong | Run with `--preview` and check the line. Re-run **Calibrate** if the camera view has changed. |
-| The dashboard says there is no database | Run the counter (`python -m traffic run`) at least once first |
+| The report says there is no database | Run the counter (`python -m traffic run`) at least once first |
 | Empty places in charts | The camera was not working at that time. This is shown on purpose and is not zero traffic. |
 
 ---

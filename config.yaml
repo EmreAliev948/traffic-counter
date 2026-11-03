@@ -20,7 +20,7 @@ defaults:
   vid_stride: 2               # analyse every 2nd frame (25 fps stream -> 12.5 frames/s)
   classes: [0, 1, 2, 3, 5, 7] # COCO: person, bicycle, car, motorcycle, bus, truck
   db_path: data/traffic.db    # relative to this file
-  timezone: Europe/Sofia      # dashboard display only; the database is always UTC
+  timezone: Europe/Sofia      # reports only; the database is always UTC
 
 cameras:
   - id: "2"
