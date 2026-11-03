@@ -1,0 +1,55 @@
+# Traffic counter v3 - configuration
+#
+# Line coordinates are in pixels of the stream's native resolution.
+# Get them with:  python -m tools.calibrate <camera_id>
+#
+# Direction: imagine standing on the line's first point looking towards the second.
+#   "in"  = the object moves from your LEFT side to your RIGHT side
+#   "out" = the object moves from your RIGHT side to your LEFT side
+# (For a horizontal line drawn left -> right, "in" means moving DOWN the image.)
+#
+# Public streams can move or disappear. Status checked on 2026-10-15:
+#   working: 2, 4, 5, 6, 7, 8, 9, 11    offline: 3, 10, 12 (YouTube says "not available")
+# Check each source's terms of use before long-running use.
+
+defaults:
+  model: yolo26n.pt           # downloaded by ultralytics on first use
+  fallback_model: yolo11n.pt  # used if the main model cannot be loaded
+  conf: 0.1                   # low on purpose: ByteTrack stage 2 needs boxes scoring 0.1-0.25 (see worker.py)
+  imgsz: 640
+  vid_stride: 2               # analyse every 2nd frame (25 fps stream -> 12.5 frames/s)
+  classes: [0, 1, 2, 3, 5, 7] # COCO: person, bicycle, car, motorcycle, bus, truck
+  db_path: data/traffic.db    # relative to this file
+  timezone: Europe/Sofia      # dashboard display only; the database is always UTC
+
+cameras:
+  - id: "2"
+    name: Ruse - checkpoint (KPP)
+    url: http://s19.r145.nbis.net:8081/or-bul-cam4/index.m3u8
+    enabled: true
+    line: [[60, 420], [1000, 420]]
+
+  - id: "5"
+    name: Tutrakan - main road
+    url: http://s19.r145.nbis.net:8081/or-bul-cam1/index.m3u8
+    enabled: true
+    line: [[1164, 261], [320, 163]]
+
+  - id: "6"
+    name: Ruse - Silistra road
+    url: http://s19.r145.nbis.net:8081/or-bul-cam2/index.m3u8
+    enabled: false
+    line: [[1190, 580], [244, 227]]
+    
+  - id: "7"
+    name: Or-Bul cam 3 - dual carriageway
+    url: http://s19.r145.nbis.net:8081/or-bul-cam3/index.m3u8
+    enabled: false
+    line: [[1263, 417], [481, 196]]
+
+  - id: "4"
+    name: Plovdiv - Komatevo centre
+    url: https://www.youtube.com/watch?v=8p-QOW9jSjw
+    enabled: false
+    line: [[477, 349], [82, 688]]
+

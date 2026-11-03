@@ -1,0 +1,12 @@
+# Python 3.11-3.13 (torch 2.14.1 has no wheels for 3.14+). Versions verified together on 2026-10-15 (macOS arm64, Python 3.13).
+ultralytics==8.4.177   # YOLO26n / YOLO11n + built-in ByteTrack
+lap==0.5.13            # needed by ultralytics' ByteTrack (otherwise it tries to pip-install it at runtime)
+torch==2.14.1
+torchvision==0.29.1
+opencv-python==5.0.0.93
+yt-dlp==2026.8.19      # update this first if YouTube streams stop resolving
+pyyaml==6.0.3
+pandas==3.0.6
+streamlit==1.66.0
+plotly==7.1.0
+matplotlib==3.11.2     # static charts for the written report (tools/report.py)
