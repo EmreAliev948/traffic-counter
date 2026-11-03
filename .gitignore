@@ -7,5 +7,4 @@ manual/
 *.pt
 reports/
 tests/
-traffic/analysis.py
 *.pdf
