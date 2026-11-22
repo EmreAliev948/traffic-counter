@@ -1,5 +1,6 @@
 # Python 3.11-3.13 (torch 2.14.1 has no wheels for 3.14+). Versions verified together on 2026-10-15 (macOS arm64, Python 3.13).
 ultralytics==8.4.177   # YOLO26n / YOLO11n + built-in ByteTrack
+openvino==2026.4.1     # default inference backend (config.yaml: backend); export runs once at start-up
 lap==0.5.13            # needed by ultralytics' ByteTrack (otherwise it tries to pip-install it at runtime)
 torch==2.14.1
 torchvision==0.29.1

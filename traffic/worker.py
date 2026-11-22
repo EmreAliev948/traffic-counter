@@ -24,6 +24,7 @@ import numpy as np
 from . import db
 from .config import Camera, Config, Defaults
 from .counter import LineCounter, TrackedBox
+from .model import prepare_model
 from .stream import StopSignal, Stream
 
 log = logging.getLogger(__name__)
@@ -58,13 +59,15 @@ class EventBuffer:
         self.last_flush = time.monotonic()
 
 
-def load_model(defaults: Defaults):
-    """Load the configured YOLO model, or the fallback if that fails (e.g. old ultralytics)."""
+def load_model(defaults: Defaults, model_path: str | None = None):
+    """Load the prepared model (an export, see traffic/model.py), else the PyTorch weights,
+    else the fallback (e.g. old ultralytics)."""
     from ultralytics import YOLO
 
-    for name in (defaults.model, defaults.fallback_model):
+    names = dict.fromkeys(n for n in (model_path, defaults.model, defaults.fallback_model) if n)
+    for name in names:
         try:
-            return YOLO(name)
+            return YOLO(name, task="detect")
         except Exception as err:
             log.warning("cannot load model %s: %s", name, err)
     raise RuntimeError(f"neither {defaults.model} nor {defaults.fallback_model} could be loaded")
@@ -202,7 +205,10 @@ def draw_line(frame: np.ndarray, line: tuple[tuple[int, int], tuple[int, int]]) 
     cv2.putText(frame, "in", tip, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
 
-def run_camera(cam: Camera, defaults: Defaults, stop: StopSignal, threads: int, preview: bool = False) -> None:
+def run_camera(
+    cam: Camera, defaults: Defaults, stop: StopSignal, threads: int, preview: bool = False,
+    model_path: str | None = None,
+) -> None:
     """Entry point of a worker process."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C is handled by the main process via `stop`
     signal.signal(signal.SIGTERM, _exit_on_sigterm)  # systemd may signal every process, not only the main one
@@ -217,8 +223,8 @@ def run_camera(cam: Camera, defaults: Defaults, stop: StopSignal, threads: int, 
         db.insert_health(conn, cam.id, status)
 
     stream = Stream(cam.url, defaults.vid_stride, on_status, stop)
-    track = make_tracker(load_model(defaults), defaults)
-    log.info("camera %s started (run %s, %d threads)", cam.id, run_id[:8], threads)
+    track = make_tracker(load_model(defaults, model_path), defaults)
+    log.info("camera %s started (run %s, %d threads, model %s)", cam.id, run_id[:8], threads, model_path or defaults.model)
     try:
         process_frames(
             stream.frames(), track, cam, conn, run_id, preview,
@@ -246,6 +252,7 @@ def supervise(config: Config, only: list[str] | None = None, preview: bool = Fal
     for cam in cameras:
         db.upsert_camera(conn, cam)
     conn.close()
+    model_path = prepare_model(config.defaults)  # export once here, not in 4 processes at the same time
 
     ctx = mp.get_context("spawn")  # same behaviour on macOS, Linux and Windows
     stop = ctx.Event()
@@ -254,7 +261,7 @@ def supervise(config: Config, only: list[str] | None = None, preview: bool = Fal
         signal.signal(sig, _raise_keyboard_interrupt)
 
     def start(cam: Camera) -> mp.process.BaseProcess:
-        p = ctx.Process(target=run_camera, args=(cam, config.defaults, stop, threads, preview), name=f"cam-{cam.id}")
+        p = ctx.Process(target=run_camera, args=(cam, config.defaults, stop, threads, preview, model_path), name=f"cam-{cam.id}")
         p.start()
         return p
 

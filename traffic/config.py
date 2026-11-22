@@ -17,12 +17,16 @@ class ConfigError(ValueError):
     """Raised when config.yaml is missing or invalid."""
 
 
+BACKENDS = ("pytorch", "onnx", "openvino")
+
+
 @dataclass(frozen=True)
 class Defaults:
     model: str = "yolo26n.pt"
     fallback_model: str = "yolo11n.pt"
+    backend: str = "pytorch"
     conf: float = 0.1
-    imgsz: int = 640
+    imgsz: int | tuple[int, int] = 640
     vid_stride: int = 2
     line_margin_px: float = 6.0
     classes: tuple[int, ...] = (0, 1, 2, 3, 5, 7)
@@ -78,6 +82,10 @@ def _parse_defaults(raw: dict[str, Any], base_dir: Path) -> Defaults:
     vid_stride = int(raw.get("vid_stride", d.vid_stride))
     if vid_stride < 1:
         raise ConfigError(f"defaults.vid_stride must be >= 1, got {vid_stride}")
+    backend = str(raw.get("backend", d.backend))
+    if backend not in BACKENDS:
+        raise ConfigError(f"defaults.backend must be one of {', '.join(BACKENDS)}, got {backend!r}")
+    imgsz = _parse_imgsz(raw.get("imgsz", d.imgsz))
     line_margin_px = float(raw.get("line_margin_px", d.line_margin_px))
     if line_margin_px < 0:
         raise ConfigError(f"defaults.line_margin_px must be >= 0, got {line_margin_px}")
@@ -89,13 +97,25 @@ def _parse_defaults(raw: dict[str, Any], base_dir: Path) -> Defaults:
         model=str(raw.get("model", d.model)),
         fallback_model=str(raw.get("fallback_model", d.fallback_model)),
         conf=conf,
-        imgsz=int(raw.get("imgsz", d.imgsz)),
+        backend=backend,
+        imgsz=imgsz,
         vid_stride=vid_stride,
         line_margin_px=line_margin_px,
         classes=tuple(classes),
         db_path=db_path if db_path.is_absolute() else base_dir / db_path,
         timezone=str(raw.get("timezone", d.timezone)),
     )
+
+
+def _parse_imgsz(raw: Any) -> int | tuple[int, int]:
+    """640 (longest side, PyTorch keeps the aspect) or [height, width] (fixed, e.g. for exports)."""
+    sizes = [raw] if isinstance(raw, int) else raw
+    if not (
+        isinstance(sizes, list) and len(sizes) in (1, 2)
+        and all(isinstance(v, int) and v > 0 and v % 32 == 0 for v in sizes)
+    ):
+        raise ConfigError(f"defaults.imgsz must be a multiple of 32 or [height, width] of them, got {raw!r}")
+    return sizes[0] if isinstance(raw, int) else (sizes[0], sizes[-1])
 
 
 def _parse_cameras(raw: Any) -> tuple[Camera, ...]:

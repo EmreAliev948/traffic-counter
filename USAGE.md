@@ -252,7 +252,7 @@ Options:
 |---|---|
 | `pip install` fails with `No matching distribution found for torch==...` | Your Python is too new. Delete the environment (`rm -rf .venv`) and create it again with `python3.13 -m venv .venv` from the `v3` folder (section 2). |
 | A camera shows "reconnecting" all the time | The stream is probably offline. Try it in a browser, or set `enabled: false` and use another camera. |
-| The computer is too slow | In `config.yaml`, raise `vid_stride` (for example to 3) or run fewer cameras |
+| The computer is too slow | In `config.yaml`, use `backend: openvino` (x86), raise `vid_stride`, or run fewer cameras |
 | Counts look wrong | Run with `--preview` and check the line. Re-run **Calibrate** if the camera view has changed. |
 | The report says there is no database | Run the counter (`python -m traffic run`) at least once first |
 | Empty places in charts | The camera was not working at that time. This is shown on purpose and is not zero traffic. |
@@ -338,7 +338,7 @@ sqlite3 data/traffic.db "select camera_id, count(*) from crossing_event group by
 Every 30 s each camera logs `N analysed frames/s`. **It must keep up with the stream**:
 
 ```
-target = stream fps / vid_stride          e.g. 25 fps / 4 = 6.25 analysed frames/s
+target = stream fps / vid_stride          e.g. 25 fps / 3 = 8.3 analysed frames/s
 ```
 
 - **About the target, and steady:** good. Short jumps above it (for example 7.4) right after
@@ -360,6 +360,24 @@ The total speed of the server is shared between the cameras. Example: a server d
 streams at `vid_stride: 4` (6.25 needed), but not at `vid_stride: 2` (12.5 needed).
 A higher `vid_stride` can miss some fast cars on a fast road, so do a short manual count
 (section 7) on the fastest camera after changing it.
+
+### Faster model backend
+
+`backend` in `config.yaml` chooses how the model runs. Measured on the AMD EPYC server
+with 4 cameras at once (yolo26n, `imgsz: [384, 640]`):
+
+| `backend` | analysed frames/s per camera |
+|---|---|
+| `pytorch` | 8.6 |
+| `onnx` | 10-12 (needs `pip install onnx onnxruntime onnxslim`) |
+| `openvino` (default) | 16 |
+
+These numbers are the model alone; reading the stream costs a little more on top.
+The first start after a change exports the model once (a few seconds), as for example
+`yolo26n_384x640_openvino_model/`. Changing `imgsz` creates a new export by itself. If the
+export fails, the log says so and the counter runs on `pytorch` instead.
+OpenVINO is made for x86 processors (Intel / AMD). On an Apple Silicon Mac it is slower
+than `pytorch`, so use `backend: pytorch` there if you run the counter on a Mac.
 
 Lines like `[http @ 0x...] Error reading HTTP response: End of file` in the log come from the
 video library when the camera server cuts one download short. They are retried by
