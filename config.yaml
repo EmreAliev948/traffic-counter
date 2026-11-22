@@ -17,7 +17,7 @@ defaults:
   conf: 0.1                   # low on purpose: ByteTrack stage 2 needs boxes scoring 0.1-0.25 (see worker.py)
   backend: openvino           # pytorch | onnx | openvino. Exported once at start-up; on the AMD EPYC server openvino is 1.85x faster than pytorch
   imgsz: [384, 640]           # [height, width] the model sees. 16:9 frames need no padding at this size
-  vid_stride: 3               # analyse every 3rd frame (25 fps stream -> 8.3 frames/s; openvino gives ~12+ per camera on the server)
+  vid_stride: auto            # auto = analyse as many frames as the CPU allows without falling behind; or a fixed number (3 = every 3rd frame)
   line_margin_px: 6           # a crossing counts only once the box bottom is this many pixels past the line
   classes: [0, 1, 2, 3, 5, 7] # COCO: person, bicycle, car, motorcycle, bus, truck
   db_path: data/traffic.db    # relative to this file

@@ -27,7 +27,7 @@ class Defaults:
     backend: str = "pytorch"
     conf: float = 0.1
     imgsz: int | tuple[int, int] = 640
-    vid_stride: int = 2
+    vid_stride: int | None = None  # None = "auto" (see traffic/stride.py)
     line_margin_px: float = 6.0
     classes: tuple[int, ...] = (0, 1, 2, 3, 5, 7)
     db_path: Path = Path("data/traffic.db")
@@ -79,9 +79,13 @@ def _parse_defaults(raw: dict[str, Any], base_dir: Path) -> Defaults:
     conf = float(raw.get("conf", d.conf))
     if not 0.0 < conf < 1.0:
         raise ConfigError(f"defaults.conf must be between 0 and 1, got {conf}")
-    vid_stride = int(raw.get("vid_stride", d.vid_stride))
-    if vid_stride < 1:
-        raise ConfigError(f"defaults.vid_stride must be >= 1, got {vid_stride}")
+    raw_stride = raw.get("vid_stride", "auto")
+    if raw_stride == "auto":
+        vid_stride = None
+    elif isinstance(raw_stride, int) and not isinstance(raw_stride, bool) and raw_stride >= 1:
+        vid_stride = raw_stride
+    else:
+        raise ConfigError(f"defaults.vid_stride must be 'auto' or a whole number >= 1, got {raw_stride!r}")
     backend = str(raw.get("backend", d.backend))
     if backend not in BACKENDS:
         raise ConfigError(f"defaults.backend must be one of {', '.join(BACKENDS)}, got {backend!r}")

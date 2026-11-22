@@ -26,6 +26,7 @@ from .config import Camera, Config, Defaults
 from .counter import LineCounter, TrackedBox
 from .model import prepare_model
 from .stream import StopSignal, Stream
+from .stride import START_STRIDE, choose_stride, measured_load
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,26 @@ HEALTH_EVERY_S = 30.0
 RESTART_DELAY_S = 10.0
 
 TrackFn = Callable[[np.ndarray], list[TrackedBox]]
+WindowFn = Callable[[float, int, float], str]  # (wall_s, analysed, analyse_s) -> text for the log
+
+
+class StrideControl:
+    """Called once per health window: reads the stream's stats and, in auto mode, sets its stride."""
+
+    def __init__(self, stream: Stream, auto: bool) -> None:
+        self.stream = stream
+        self.auto = auto
+        self.session = stream.session
+
+    def __call__(self, wall_s: float, analysed: int, analyse_s: float) -> str:
+        stats = self.stream.take_stats()
+        reconnected, self.session = self.stream.session != self.session, self.stream.session
+        if stats.video_s <= 0:
+            return f"stride {self.stream.stride}"
+        load = measured_load(stats, wall_s)
+        if self.auto and not reconnected:  # a reconnect's waiting would distort the load
+            self.stream.stride = choose_stride(self.stream.stride, stats, wall_s, analysed, analyse_s)
+        return f"stride {self.stream.stride}, load {load:.2f}"
 
 
 class EventBuffer:
@@ -132,16 +153,20 @@ def process_frames(
     preview: bool = False,
     session: Callable[[], int] | None = None,
     margin_px: float = 6.0,
+    on_window: WindowFn | None = None,
 ) -> None:
     """The main loop. `frames` is a Stream in production and a plain list in tests.
 
     `session()` returns the stream's connection number. When it changes, the stream was
     reconnected: the tracker and the line counter are reset, otherwise an old track
     could be matched to a new object somewhere else and produce a false crossing.
+
+    `on_window` is called every HEALTH_EVERY_S with the window's wall time, the number of
+    analysed frames and the time spent analysing them (model + counting).
     """
     counter = LineCounter(cam.line, margin_px=margin_px)
     buffer = EventBuffer(conn)
-    analysed, window_start = 0, time.monotonic()
+    analysed, analyse_s, window_start = 0, 0.0, time.monotonic()
     current_session = session() if session else 0
     try:
         for frame in frames:
@@ -154,8 +179,11 @@ def process_frames(
                     if reset is not None:
                         reset()
                     log.info("camera %s: stream reconnected (session %d), tracks reset", cam.id, current_session)
+            started = time.monotonic()
             boxes = track(frame)
-            for c in counter.update(boxes):
+            crossings = counter.update(boxes)
+            analyse_s += time.monotonic() - started
+            for c in crossings:
                 buffer.add(db.CrossingEvent(
                     event_id=db.make_event_id(cam.id, f"{run_id}-{current_session}", c.track_id, c.direction),
                     camera_id=cam.id, ts_utc=db.utc_now(), track_id=c.track_id,
@@ -172,8 +200,9 @@ def process_frames(
             if elapsed >= HEALTH_EVERY_S:
                 fps = analysed / elapsed
                 db.insert_health(conn, cam.id, "up", round(fps, 2))
-                log.info("camera %s: %.1f analysed frames/s, %d active tracks", cam.id, fps, counter.active_tracks)
-                analysed, window_start = 0, time.monotonic()
+                extra = f", {on_window(elapsed, analysed, analyse_s)}" if on_window else ""
+                log.info("camera %s: %.1f analysed frames/s%s, %d active tracks", cam.id, fps, extra, counter.active_tracks)
+                analysed, analyse_s, window_start = 0, 0.0, time.monotonic()
     finally:
         buffer.flush()
 
@@ -222,13 +251,14 @@ def run_camera(
     def on_status(status: str) -> None:
         db.insert_health(conn, cam.id, status)
 
-    stream = Stream(cam.url, defaults.vid_stride, on_status, stop)
+    stream = Stream(cam.url, defaults.vid_stride or START_STRIDE, on_status, stop)
+    control = StrideControl(stream, auto=defaults.vid_stride is None)
     track = make_tracker(load_model(defaults, model_path), defaults)
     log.info("camera %s started (run %s, %d threads, model %s)", cam.id, run_id[:8], threads, model_path or defaults.model)
     try:
         process_frames(
             stream.frames(), track, cam, conn, run_id, preview,
-            session=lambda: stream.session, margin_px=defaults.line_margin_px,
+            session=lambda: stream.session, margin_px=defaults.line_margin_px, on_window=control,
         )
         stop.set()  # a normal return means 'q' in the preview window: end the whole run
     finally:

@@ -252,7 +252,7 @@ Options:
 |---|---|
 | `pip install` fails with `No matching distribution found for torch==...` | Your Python is too new. Delete the environment (`rm -rf .venv`) and create it again with `python3.13 -m venv .venv` from the `v3` folder (section 2). |
 | A camera shows "reconnecting" all the time | The stream is probably offline. Try it in a browser, or set `enabled: false` and use another camera. |
-| The computer is too slow | In `config.yaml`, use `backend: openvino` (x86), raise `vid_stride`, or run fewer cameras |
+| The computer is too slow (`load` above 1, stride stuck at 10) | In `config.yaml`, use `backend: openvino` (x86), or run fewer cameras |
 | Counts look wrong | Run with `--preview` and check the line. Re-run **Calibrate** if the camera view has changed. |
 | The report says there is no database | Run the counter (`python -m traffic run`) at least once first |
 | Empty places in charts | The camera was not working at that time. This is shown on purpose and is not zero traffic. |
@@ -335,19 +335,33 @@ journalctl -u traffic --since "1 hour ago" | grep -cE "reconnect|is down"   # sh
 sqlite3 data/traffic.db "select camera_id, count(*) from crossing_event group by 1"
 ```
 
-Every 30 s each camera logs `N analysed frames/s`. **It must keep up with the stream**:
+Every 30 s each camera logs a line like:
 
 ```
-target = stream fps / vid_stride          e.g. 25 fps / 3 = 8.3 analysed frames/s
+camera 4: 11.9 analysed frames/s, stride 2, load 0.71, 3 active tracks
 ```
 
-- **About the target, and steady:** good. Short jumps above it (for example 7.4) right after
-  start or after a hiccup are the camera catching up.
-- **Below the target and still falling:** the server is too slow. The camera falls behind
-  the live picture, its times shift, and the stream eventually reconnects. Raise
-  `vid_stride` or run fewer cameras.
-- **Below the target but steady:** the stream itself sends fewer frames than it says.
-  Nothing to fix.
+| Part | Meaning |
+|---|---|
+| `analysed frames/s` | frames the model looked at per second |
+| `stride` | every how many frames one is analysed (1 = every frame) |
+| `load` | busy time per second of video. **Below 1 = keeps up** with the live stream (the rest is waiting for the next video piece); above 1 = falls behind |
+
+With `vid_stride: auto` (the default) the camera picks the stride by itself: the smallest one
+whose predicted load stays under 0.8. It goes up at once when the camera gets too slow, and
+down by at most one step per 30 s when there is spare time. So after a start it may take a
+few minutes to settle. Nothing to tune.
+
+The cameras deliver video in pieces of about 7.5 s: a whole piece arrives at once, then
+nothing until the next one. That is why the camera does **not** just take the newest frame
+(it would skip most of each piece), and why `load` is measured against video time, not
+against the clock.
+
+To use a fixed stride instead, set for example `vid_stride: 3` (every 3rd frame). Then the
+camera must reach `stream fps / 3` analysed frames/s, e.g. 25 / 3 = 8.3. If it stays below
+that and keeps falling, it is too slow: raise `vid_stride` or run fewer cameras. If it is
+below but steady, the stream sends fewer frames than it says (camera 4 sends about 20 fps,
+not 24.3).
 
 Find a stream's fps without installing anything:
 
@@ -355,11 +369,8 @@ Find a stream's fps without installing anything:
 .venv/bin/python -c "import cv2,sys; c=cv2.VideoCapture(sys.argv[1]); print(c.get(cv2.CAP_PROP_FPS))" <stream-url>
 ```
 
-The total speed of the server is shared between the cameras. Example: a server doing about
-32 analysed frames/s in total gives 4 cameras about 8 each. That is enough for 25 fps
-streams at `vid_stride: 4` (6.25 needed), but not at `vid_stride: 2` (12.5 needed).
-A higher `vid_stride` can miss some fast cars on a fast road, so do a short manual count
-(section 7) on the fastest camera after changing it.
+The total speed of the server is shared between the cameras. A higher stride can miss some
+fast cars on a fast road, so do a short manual count (section 7) on the fastest camera.
 
 ### Faster model backend
 
