@@ -260,5 +260,113 @@ Options:
 
 ---
 
+## 12. Running 24/7 on a server (systemd)
+
+On a Linux server the counter runs as a **systemd service** called `traffic`. It starts by
+itself after a reboot and is restarted if it crashes. Do the one-time setup (section 2) in
+`~/traffic-counter` first.
+
+### The service file
+
+Create `/etc/systemd/system/traffic.service` (replace `<user>` with your login name):
+
+```ini
+[Unit]
+Description=Traffic counter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+KillMode=mixed
+TimeoutStopSec=30
+User=<user>
+WorkingDirectory=/home/<user>/traffic-counter
+Environment=OMP_WAIT_POLICY=PASSIVE OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OPENCV_FOR_THREADS_NUM=1
+ExecStart=/home/<user>/traffic-counter/.venv/bin/python -m traffic run
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+What the important lines do:
+
+| Line | Why it is needed |
+|---|---|
+| `KillMode=mixed` + `TimeoutStopSec=30` | On stop, only the main process gets the signal. It stops the cameras itself, so the last counts are saved and a `stopped` row is written. Without it every restart loses up to 2 s of counts, and the report counts up to 90 s after the stop as zero traffic. |
+| `Environment=...` | Keeps the helper libraries to one thread each, and stops idle threads from wasting CPU. The program shares the CPU cores between the cameras by itself. |
+| `ExecStart=... run` (no `--only`) | Runs every camera with `enabled: true` in `config.yaml`. |
+
+Turn it on:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now traffic
+systemctl is-enabled traffic           # must say "enabled"
+```
+
+If you change an existing service file with `sed`, check the result. A `sed` that replaces
+a line does nothing if the line is missing:
+
+```bash
+sudo sed -i 's/^Environment=.*/Environment=OMP_WAIT_POLICY=PASSIVE OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OPENCV_FOR_THREADS_NUM=1/' /etc/systemd/system/traffic.service
+sudo sed -i 's/ --only [0-9,]*//' /etc/systemd/system/traffic.service
+grep -A8 '^\[Service\]' /etc/systemd/system/traffic.service
+sudo systemctl daemon-reload && sudo systemctl restart traffic
+```
+
+After **every** change to the service file, run `sudo systemctl daemon-reload` first.
+Otherwise systemd keeps using the old version.
+
+### Updating to a new version
+
+```bash
+cd ~/traffic-counter && git pull && sudo systemctl restart traffic
+```
+
+Keep `data/traffic.db`. Only delete it (with the service stopped) if you **renumbered the
+camera ids** in `config.yaml`, because old rows would be shown under the wrong camera.
+
+### Checking that it works
+
+```bash
+journalctl -u traffic -f                                          # live log (Ctrl+C stops watching, not the service)
+journalctl -u traffic --since "1 hour ago" | grep -cE "reconnect|is down"   # should be 0 or close to it
+sqlite3 data/traffic.db "select camera_id, count(*) from crossing_event group by 1"
+```
+
+Every 30 s each camera logs `N analysed frames/s`. **It must keep up with the stream**:
+
+```
+target = stream fps / vid_stride          e.g. 25 fps / 4 = 6.25 analysed frames/s
+```
+
+- **About the target, and steady:** good. Short jumps above it (for example 7.4) right after
+  start or after a hiccup are the camera catching up.
+- **Below the target and still falling:** the server is too slow. The camera falls behind
+  the live picture, its times shift, and the stream eventually reconnects. Raise
+  `vid_stride` or run fewer cameras.
+- **Below the target but steady:** the stream itself sends fewer frames than it says.
+  Nothing to fix.
+
+Find a stream's fps without installing anything:
+
+```bash
+.venv/bin/python -c "import cv2,sys; c=cv2.VideoCapture(sys.argv[1]); print(c.get(cv2.CAP_PROP_FPS))" <stream-url>
+```
+
+The total speed of the server is shared between the cameras. Example: a server doing about
+32 analysed frames/s in total gives 4 cameras about 8 each. That is enough for 25 fps
+streams at `vid_stride: 4` (6.25 needed), but not at `vid_stride: 2` (12.5 needed).
+A higher `vid_stride` can miss some fast cars on a fast road, so do a short manual count
+(section 7) on the fastest camera after changing it.
+
+Lines like `[http @ 0x...] Error reading HTTP response: End of file` in the log come from the
+video library when the camera server cuts one download short. They are retried by
+themselves and are harmless unless they are followed by `stream ... is down`.
+
+---
+
 **Privacy:** the program never saves video or images and does not recognise faces or
 number plates. Only counts are stored.
