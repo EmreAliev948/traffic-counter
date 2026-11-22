@@ -26,7 +26,7 @@ from .config import Camera, Config, Defaults
 from .counter import LineCounter, TrackedBox
 from .model import prepare_model
 from .stream import StopSignal, Stream
-from .stride import START_STRIDE, choose_stride, measured_load
+from .stride import START_STRIDE, StrideHistory, choose_stride, measured_load
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ class StrideControl:
         self.stream = stream
         self.auto = auto
         self.session = stream.session
+        self.history = StrideHistory()
 
     def __call__(self, wall_s: float, analysed: int, analyse_s: float) -> str:
         stats = self.stream.take_stats()
@@ -54,7 +55,8 @@ class StrideControl:
             return f"stride {self.stream.stride}"
         load = measured_load(stats, wall_s)
         if self.auto and not reconnected:  # a reconnect's waiting would distort the load
-            self.stream.stride = choose_stride(self.stream.stride, stats, wall_s, analysed, analyse_s)
+            proposed = choose_stride(self.stream.stride, stats, wall_s, analysed, analyse_s)
+            self.stream.stride = self.history.next(self.stream.stride, proposed)
         return f"stride {self.stream.stride}, load {load:.2f}"
 
 

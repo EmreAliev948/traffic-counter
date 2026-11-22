@@ -14,6 +14,11 @@ live stream (the rest of the time it waits for the next segment); above 1 it fal
 model always matches the measurement at the current stride. The new stride is the smallest
 one whose predicted load fits under TARGET_LOAD. It may go up at once, but only down one step
 per window, so a single quiet window cannot swing it.
+
+The model assumes the time per analysed frame stays the same, but the cameras share the CPU:
+when one analyses more frames, every camera's frames get slower. So a lower stride can turn
+out heavier than predicted. `StrideHistory` remembers such a stride and does not retry it for
+RETRY_AFTER_WINDOWS, which stops the camera from flipping between two strides every minute.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ TARGET_LOAD = 0.8      # keep 20 % headroom for busier scenes and other processe
 MAX_STRIDE = 10
 START_STRIDE = 3       # safe on the server with 4 cameras; adapts from there
 MIN_VIDEO_S = 5.0      # windows with less video than this say too little to act on
+RETRY_AFTER_WINDOWS = 20  # a stride that proved too heavy is not tried again for 20 windows (10 min)
 
 
 @dataclass(frozen=True)
@@ -51,3 +57,19 @@ def choose_stride(current: int, stats: WindowStats, wall_s: float, analysed: int
     other = max(0.0, measured_load(stats, wall_s) - fps * per_frame / current)
     best = next((k for k in range(1, MAX_STRIDE + 1) if fps * per_frame / k + other <= TARGET_LOAD), MAX_STRIDE)
     return max(best, current - 1)  # up at once, down one step per window
+
+
+class StrideHistory:
+    """Remembers strides that proved too heavy, so the controller does not flip back to them."""
+
+    def __init__(self) -> None:
+        self.window = 0
+        self._blocked_until: dict[int, int] = {}
+
+    def next(self, current: int, proposed: int) -> int:
+        self.window += 1
+        if proposed > current:  # `current` was too heavy: leave it alone for a while
+            self._blocked_until[current] = self.window + RETRY_AFTER_WINDOWS
+        elif proposed < current and self._blocked_until.get(proposed, 0) > self.window:
+            return current
+        return proposed
