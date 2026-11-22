@@ -1,6 +1,6 @@
 """Export charts (PNG, matplotlib) and tables (CSV + summary.txt) for the written report.
 
-    python -m tools.report [--from 2026-10-20] [--to 2026-10-26] [--camera 2 --camera 5] [--out reports]
+    python -m tools.report [--from 2026-10-20] [--to 2026-10-26] [--camera 1 --camera 2] [--out reports]
 
 Dates are local days (config timezone), both inclusive; default = the last 7 days.
 Only aggregated counts are drawn - no video frames are involved. Uses the

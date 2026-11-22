@@ -194,7 +194,7 @@ Optional settings for evaluate:
 python -m traffic report                                        # last 7 days, all cameras
 python -m traffic report --from 2026-10-20 --to 2026-10-26      # chosen dates
 python -m traffic report --from 2026-10-20 --to 2026-10-26 --camera 2
-python -m traffic report --camera 2 --camera 5 --day-hours 6-20
+python -m traffic report --camera 1 --camera 2 --day-hours 6-20
 ```
 
 Everything is saved in `reports/<from>_<to>/`:

@@ -23,33 +23,27 @@ defaults:
   timezone: Europe/Sofia      # reports only; the database is always UTC
 
 cameras:
-  - id: "2"
+  - id: "1"
     name: Ruse - checkpoint (KPP)
     url: http://s19.r145.nbis.net:8081/or-bul-cam4/index.m3u8
     enabled: true
     line: [[60, 420], [1000, 420]]
 
-  - id: "5"
+  - id: "2"
     name: Tutrakan - main road
     url: http://s19.r145.nbis.net:8081/or-bul-cam1/index.m3u8
     enabled: true
     line: [[1164, 261], [320, 163]]
 
-  - id: "6"
+  - id: "3"
     name: Ruse - Silistra road
     url: http://s19.r145.nbis.net:8081/or-bul-cam2/index.m3u8
     enabled: false
     line: [[1190, 580], [244, 227]]
     
-  - id: "7"
+  - id: "4"
     name: Or-Bul cam 3 - dual carriageway
     url: http://s19.r145.nbis.net:8081/or-bul-cam3/index.m3u8
     enabled: false
     line: [[1263, 417], [481, 196]]
-
-  - id: "4"
-    name: Plovdiv - Komatevo centre
-    url: https://www.youtube.com/watch?v=8p-QOW9jSjw
-    enabled: false
-    line: [[477, 349], [82, 688]]
 
