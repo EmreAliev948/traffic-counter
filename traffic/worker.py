@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import db
+from . import cpu, db
 from .config import Camera, Config, Defaults
 from .counter import LineCounter, TrackedBox
 from .model import prepare_model
@@ -238,12 +238,15 @@ def draw_line(frame: np.ndarray, line: tuple[tuple[int, int], tuple[int, int]]) 
 
 def run_camera(
     cam: Camera, defaults: Defaults, stop: StopSignal, threads: int, preview: bool = False,
-    model_path: str | None = None,
+    model_path: str | None = None, cpus: set[int] | None = None,
 ) -> None:
     """Entry point of a worker process."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C is handled by the main process via `stop`
     signal.signal(signal.SIGTERM, _exit_on_sigterm)  # systemd may signal every process, not only the main one
     setup_logging()
+    cpu.pin_current_process(cpus)  # before the model loads, so OpenVINO / PyTorch only see these CPUs
+    if cpus:
+        threads = len(cpus)
     import torch
 
     torch.set_num_threads(threads)  # share CPU cores fairly between the camera processes
@@ -256,7 +259,8 @@ def run_camera(
     stream = Stream(cam.url, defaults.vid_stride or START_STRIDE, on_status, stop)
     control = StrideControl(stream, auto=defaults.vid_stride is None)
     track = make_tracker(load_model(defaults, model_path), defaults)
-    log.info("camera %s started (run %s, %d threads, model %s)", cam.id, run_id[:8], threads, model_path or defaults.model)
+    where = f"CPUs {','.join(map(str, sorted(cpus)))}" if cpus else f"{threads} threads"
+    log.info("camera %s started (run %s, %s, model %s)", cam.id, run_id[:8], where, model_path or defaults.model)
     try:
         process_frames(
             stream.frames(), track, cam, conn, run_id, preview,
@@ -289,11 +293,13 @@ def supervise(config: Config, only: list[str] | None = None, preview: bool = Fal
     ctx = mp.get_context("spawn")  # same behaviour on macOS, Linux and Windows
     stop = ctx.Event()
     threads = max(1, (os.cpu_count() or 2) // len(cameras))
+    cpus_of = dict(zip((c.id for c in cameras), cpu.plan(len(cameras), config.defaults.pin_cores), strict=True))
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, _raise_keyboard_interrupt)
 
     def start(cam: Camera) -> mp.process.BaseProcess:
-        p = ctx.Process(target=run_camera, args=(cam, config.defaults, stop, threads, preview, model_path), name=f"cam-{cam.id}")
+        args = (cam, config.defaults, stop, threads, preview, model_path, cpus_of[cam.id])
+        p = ctx.Process(target=run_camera, args=args, name=f"cam-{cam.id}")
         p.start()
         return p
 

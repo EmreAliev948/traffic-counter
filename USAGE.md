@@ -390,6 +390,16 @@ export fails, the log says so and the counter runs on `pytorch` instead.
 OpenVINO is made for x86 processors (Intel / AMD). On an Apple Silicon Mac it is slower
 than `pytorch`, so use `backend: pytorch` there if you run the counter on a Mac.
 
+### One CPU core per camera (`pin_cores`)
+
+On Linux each camera process is locked to its own physical CPU core (both of its
+hyperthreads), for example camera 1 on CPUs 0 and 4. The log shows it:
+`camera 1 started (..., CPUs 0,4, ...)`. Without this, OpenVINO in every camera picks the
+same CPUs and the cameras crowd onto half of the CPUs (in `htop`: CPUs 4-7 at 100 %,
+0-3 almost idle). Measured on the server with 4 cameras: 63.5 analysed frames/s in total
+without, 77.4 with (+22 %). With fewer cameras than cores each camera gets several cores;
+with more, they share. Set `pin_cores: false` to turn it off. On macOS it does nothing.
+
 Lines like `[http @ 0x...] Error reading HTTP response: End of file` in the log come from the
 video library when the camera server cuts one download short. They are retried by
 themselves and are harmless unless they are followed by `stream ... is down`.
