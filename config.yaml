@@ -17,7 +17,7 @@ defaults:
   fallback_model: yolo11n.pt  # used if the main model cannot be loaded
   conf: 0.1                   # low on purpose: ByteTrack stage 2 needs boxes scoring 0.1-0.25 (see worker.py)
   imgsz: 640
-  vid_stride: 2               # analyse every 2nd frame (25 fps stream -> 12.5 frames/s)
+  vid_stride: 4               # analyse every 4th frame (25 fps stream -> 6.25 frames/s; 4 cameras reach ~8 on the server)
   classes: [0, 1, 2, 3, 5, 7] # COCO: person, bicycle, car, motorcycle, bus, truck
   db_path: data/traffic.db    # relative to this file
   timezone: Europe/Sofia      # reports only; the database is always UTC
