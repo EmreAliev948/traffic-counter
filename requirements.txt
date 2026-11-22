@@ -4,7 +4,6 @@ lap==0.5.13            # needed by ultralytics' ByteTrack (otherwise it tries to
 torch==2.14.1
 torchvision==0.29.1
 opencv-python==5.0.0.93
-yt-dlp==2026.8.19      # update this first if YouTube streams stop resolving
 pyyaml==6.0.3
 pandas==3.0.6
 matplotlib==3.11.2     # static charts for the written report (tools/report.py)

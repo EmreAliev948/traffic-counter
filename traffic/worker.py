@@ -128,6 +128,7 @@ def process_frames(
     run_id: str,
     preview: bool = False,
     session: Callable[[], int] | None = None,
+    margin_px: float = 6.0,
 ) -> None:
     """The main loop. `frames` is a Stream in production and a plain list in tests.
 
@@ -135,7 +136,7 @@ def process_frames(
     reconnected: the tracker and the line counter are reset, otherwise an old track
     could be matched to a new object somewhere else and produce a false crossing.
     """
-    counter = LineCounter(cam.line)
+    counter = LineCounter(cam.line, margin_px=margin_px)
     buffer = EventBuffer(conn)
     analysed, window_start = 0, time.monotonic()
     current_session = session() if session else 0
@@ -204,6 +205,7 @@ def draw_line(frame: np.ndarray, line: tuple[tuple[int, int], tuple[int, int]]) 
 def run_camera(cam: Camera, defaults: Defaults, stop: StopSignal, threads: int, preview: bool = False) -> None:
     """Entry point of a worker process."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl+C is handled by the main process via `stop`
+    signal.signal(signal.SIGTERM, _exit_on_sigterm)  # systemd may signal every process, not only the main one
     setup_logging()
     import torch
 
@@ -218,7 +220,10 @@ def run_camera(cam: Camera, defaults: Defaults, stop: StopSignal, threads: int, 
     track = make_tracker(load_model(defaults), defaults)
     log.info("camera %s started (run %s, %d threads)", cam.id, run_id[:8], threads)
     try:
-        process_frames(stream.frames(), track, cam, conn, run_id, preview, session=lambda: stream.session)
+        process_frames(
+            stream.frames(), track, cam, conn, run_id, preview,
+            session=lambda: stream.session, margin_px=defaults.line_margin_px,
+        )
         stop.set()  # a normal return means 'q' in the preview window: end the whole run
     finally:
         try:
@@ -268,7 +273,18 @@ def supervise(config: Config, only: list[str] | None = None, preview: bool = Fal
         for _, proc, _ in procs.values():
             proc.join(timeout=15)
             if proc.is_alive():
-                proc.terminate()
+                proc.kill()  # SIGTERM would only ask again (see _exit_on_sigterm); this one is stuck
+
+
+def _exit_on_sigterm(*_: object) -> None:
+    """SIGTERM in a camera process -> normal exit through the `finally` blocks, so the
+    buffered events are written and a 'stopped' row marks the end of the covered period.
+
+    Raising instead of calling stop.set() avoids the deadlock described below. Further
+    SIGTERMs are ignored so they cannot interrupt that cleanup.
+    """
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise SystemExit(0)
 
 
 def _raise_keyboard_interrupt(*_: object) -> None:

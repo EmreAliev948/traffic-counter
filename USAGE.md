@@ -67,7 +67,7 @@ All cameras are listed in the file `config.yaml`. Each camera has:
 
 - `id` – a short number or name you use in commands (for example `"2"`)
 - `name` – a readable description
-- `url` – the stream address (a YouTube link or a direct `.m3u8` link)
+- `url` – the stream address: a direct `.m3u8` or `rtsp://` link (web pages such as YouTube are not supported)
 - `enabled` – `true` = counted when you run the counter, `false` = skipped
 - `line` – the counting line (filled in by the Calibrate tool)
 
@@ -78,7 +78,7 @@ All cameras are listed in the file `config.yaml`. Each camera has:
    ```yaml
      - id: "20"
        name: Sofia - example street
-       url: https://www.youtube.com/watch?v=XXXXXXXXXXX
+       url: http://example.com/cam/index.m3u8
        enabled: true
        line: [[0, 0], [1, 1]]     # temporary, replaced in step 2
    ```
@@ -252,7 +252,6 @@ Options:
 |---|---|
 | `pip install` fails with `No matching distribution found for torch==...` | Your Python is too new. Delete the environment (`rm -rf .venv`) and create it again with `python3.13 -m venv .venv` from the `v3` folder (section 2). |
 | A camera shows "reconnecting" all the time | The stream is probably offline. Try it in a browser, or set `enabled: false` and use another camera. |
-| YouTube cameras stop opening | Update the downloader with `pip install -U yt-dlp` |
 | The computer is too slow | In `config.yaml`, raise `vid_stride` (for example to 3) or run fewer cameras |
 | Counts look wrong | Run with `--preview` and check the line. Re-run **Calibrate** if the camera view has changed. |
 | The report says there is no database | Run the counter (`python -m traffic run`) at least once first |

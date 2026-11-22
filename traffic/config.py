@@ -24,6 +24,7 @@ class Defaults:
     conf: float = 0.1
     imgsz: int = 640
     vid_stride: int = 2
+    line_margin_px: float = 6.0
     classes: tuple[int, ...] = (0, 1, 2, 3, 5, 7)
     db_path: Path = Path("data/traffic.db")
     timezone: str = "UTC"
@@ -77,6 +78,9 @@ def _parse_defaults(raw: dict[str, Any], base_dir: Path) -> Defaults:
     vid_stride = int(raw.get("vid_stride", d.vid_stride))
     if vid_stride < 1:
         raise ConfigError(f"defaults.vid_stride must be >= 1, got {vid_stride}")
+    line_margin_px = float(raw.get("line_margin_px", d.line_margin_px))
+    if line_margin_px < 0:
+        raise ConfigError(f"defaults.line_margin_px must be >= 0, got {line_margin_px}")
     classes = raw.get("classes", list(d.classes))
     if not (isinstance(classes, list) and classes and all(isinstance(c, int) and c >= 0 for c in classes)):
         raise ConfigError(f"defaults.classes must be a non-empty list of COCO class ids, got {classes!r}")
@@ -87,6 +91,7 @@ def _parse_defaults(raw: dict[str, Any], base_dir: Path) -> Defaults:
         conf=conf,
         imgsz=int(raw.get("imgsz", d.imgsz)),
         vid_stride=vid_stride,
+        line_margin_px=line_margin_px,
         classes=tuple(classes),
         db_path=db_path if db_path.is_absolute() else base_dir / db_path,
         timezone=str(raw.get("timezone", d.timezone)),

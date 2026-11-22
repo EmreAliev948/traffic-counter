@@ -1,7 +1,6 @@
 """Open a live stream and yield frames forever, reconnecting with exponential backoff.
 
-Page URLs (YouTube etc.) are resolved to a direct HLS URL with yt-dlp. Resolved URLs
-expire after some hours, so the URL is resolved again on every reconnect.
+The URL must be one that OpenCV/FFmpeg opens directly (HLS .m3u8, RTSP, a file...).
 Frames are only yielded (kept in RAM); this module never writes anything to disk.
 """
 
@@ -18,8 +17,6 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-DIRECT_PREFIXES = ("rtsp://", "rtmp://", "udp://", "file:", "/")
-DIRECT_SUFFIXES = (".m3u8", ".mp4", ".mjpg", ".mjpeg", ".ts")
 MIN_BACKOFF_S = 2.0
 MAX_BACKOFF_S = 60.0
 
@@ -34,28 +31,8 @@ class StopSignal(Protocol):
     def wait(self, timeout: float | None = None) -> bool: ...
 
 
-def is_direct_url(url: str) -> bool:
-    path = url.split("?", 1)[0].lower()
-    return url.startswith(DIRECT_PREFIXES) or path.endswith(DIRECT_SUFFIXES)
-
-
-def resolve_url(url: str) -> str:
-    """Return a URL that OpenCV can open; web pages are resolved through yt-dlp."""
-    if is_direct_url(url):
-        return url
-    import yt_dlp  # imported lazily: slow to import and only needed for page URLs
-
-    # Live YouTube offers video-only HLS variants; we need no audio, so prefer those.
-    options = {"format": "bestvideo[height<=720]/best[height<=720]/best", "quiet": True, "no_warnings": True}
-    with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=False)
-    if not info or not info.get("url"):
-        raise RuntimeError(f"yt-dlp found no playable stream for {url}")
-    return info["url"]
-
-
 def open_capture(url: str) -> cv2.VideoCapture:
-    cap = cv2.VideoCapture(resolve_url(url), cv2.CAP_FFMPEG)
+    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
 
@@ -108,7 +85,7 @@ class Stream:
     def _try_open(self) -> cv2.VideoCapture | None:
         try:
             cap = self.opener(self.url)
-        except Exception as err:  # yt-dlp / network errors must never kill the worker
+        except Exception as err:  # network / FFmpeg errors must never kill the worker
             log.warning("resolving %s failed: %s", self.url, err)
             return None
         if cap.isOpened():
