@@ -38,12 +38,12 @@ cameras:
   - id: "3"
     name: Ruse - Silistra road
     url: http://s19.r145.nbis.net:8081/or-bul-cam2/index.m3u8
-    enabled: false
+    enabled: true
     line: [[1190, 580], [244, 227]]
     
   - id: "4"
     name: Or-Bul cam 3 - dual carriageway
     url: http://s19.r145.nbis.net:8081/or-bul-cam3/index.m3u8
-    enabled: false
+    enabled: true
     line: [[1263, 417], [481, 196]]
 
