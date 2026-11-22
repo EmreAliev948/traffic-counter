@@ -1,7 +1,7 @@
 """Pick the inference backend and export the YOLO weights to it once, before the cameras start.
 
 On the AMD EPYC server (2026-11-23, 4 camera processes at once, yolo26n at 384x640):
-PyTorch 8.6, ONNX Runtime 11, OpenVINO 16 analysed frames/s per camera.
+PyTorch 8.6, OpenVINO 16 analysed frames/s per camera.
 
 An exported model has a fixed input size, so the size is part of the export's name:
 changing `imgsz` in config.yaml can never silently reuse an export made for another size.
@@ -28,13 +28,10 @@ def size_tag(imgsz: int | tuple[int, int]) -> str:
 
 def export_path(weights: str, backend: str, imgsz: int | tuple[int, int]) -> Path:
     """Where the export of `weights` for this backend and size lives (next to the weights)."""
+    if backend != "openvino":
+        raise ValueError(f"no export for backend {backend!r}")
     p = Path(weights)
-    stem = f"{p.stem}_{size_tag(imgsz)}"
-    if backend == "onnx":
-        return p.with_name(f"{stem}.onnx")
-    if backend == "openvino":
-        return p.with_name(f"{stem}_openvino_model")
-    raise ValueError(f"no export for backend {backend!r}")
+    return p.with_name(f"{p.stem}_{size_tag(imgsz)}_openvino_model")
 
 
 def ultralytics_export(weights: str, backend: str, imgsz: int | tuple[int, int]) -> str:
@@ -58,8 +55,7 @@ def prepare_model(defaults: Defaults, exporter: Exporter = ultralytics_export) -
     try:
         produced = Path(exporter(defaults.model, defaults.backend, defaults.imgsz))
         if produced.resolve() != target.resolve():
-            if target.exists():
-                shutil.rmtree(target) if target.is_dir() else target.unlink()
+            shutil.rmtree(target, ignore_errors=True)
             produced.rename(target)
     except Exception as err:  # e.g. openvino not installed: run on PyTorch instead
         log.warning("export to %s failed (%s); using PyTorch weights %s", defaults.backend, err, defaults.model)

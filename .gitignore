@@ -9,4 +9,3 @@ reports/
 tests/
 *.pdf
 *_openvino_model/
-*.onnx

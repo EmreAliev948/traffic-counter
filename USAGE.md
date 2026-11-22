@@ -261,13 +261,10 @@ Options:
 
 ## 12. Running 24/7 on a server (systemd)
 
-On a Linux server the counter runs as a **systemd service** called `traffic`. It starts by
-itself after a reboot and is restarted if it crashes. Do the one-time setup (section 2) in
-`~/traffic-counter` first.
+On a Linux server the counter runs as the systemd service `traffic`: it starts after a
+reboot and restarts after a crash. Do the setup (section 2) in `~/traffic-counter` first.
 
-### The service file
-
-Create `/etc/systemd/system/traffic.service` (replace `<user>` with your login name):
+Create `/etc/systemd/system/traffic.service` (replace `<user>`):
 
 ```ini
 [Unit]
@@ -276,12 +273,12 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-KillMode=mixed
-TimeoutStopSec=30
 User=<user>
 WorkingDirectory=/home/<user>/traffic-counter
 Environment=OMP_WAIT_POLICY=PASSIVE OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OPENCV_FOR_THREADS_NUM=1
 ExecStart=/home/<user>/traffic-counter/.venv/bin/python -m traffic run
+KillMode=mixed
+TimeoutStopSec=30
 Restart=always
 RestartSec=10
 
@@ -289,120 +286,42 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-What the important lines do:
-
-| Line | Why it is needed |
-|---|---|
-| `KillMode=mixed` + `TimeoutStopSec=30` | On stop, only the main process gets the signal. It stops the cameras itself, so the last counts are saved and a `stopped` row is written. Without it every restart loses up to 2 s of counts, and the report counts up to 90 s after the stop as zero traffic. |
-| `Environment=...` | Keeps the helper libraries to one thread each, and stops idle threads from wasting CPU. The program shares the CPU cores between the cameras by itself. |
-| `ExecStart=... run` (no `--only`) | Runs every camera with `enabled: true` in `config.yaml`. |
-
-Turn it on:
+- `Environment=` keeps helper libraries to one thread each, so they do not waste CPU.
+- `KillMode=mixed` lets the program stop its cameras itself, so the last counts are saved.
+- No `--only` in `ExecStart`: every camera with `enabled: true` runs.
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now traffic
-systemctl is-enabled traffic           # must say "enabled"
+sudo systemctl daemon-reload && sudo systemctl enable --now traffic   # after every change to the file
+cd ~/traffic-counter && git pull && sudo systemctl restart traffic     # update to a new version
+journalctl -u traffic -f                                               # live log (Ctrl+C only stops watching)
 ```
 
-If you change an existing service file with `sed`, check the result. A `sed` that replaces
-a line does nothing if the line is missing:
+Keep `data/traffic.db` when updating. Delete it (service stopped) only if camera ids in
+`config.yaml` were renumbered.
 
-```bash
-sudo sed -i 's/^Environment=.*/Environment=OMP_WAIT_POLICY=PASSIVE OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OPENCV_FOR_THREADS_NUM=1/' /etc/systemd/system/traffic.service
-sudo sed -i 's/ --only [0-9,]*//' /etc/systemd/system/traffic.service
-grep -A8 '^\[Service\]' /etc/systemd/system/traffic.service
-sudo systemctl daemon-reload && sudo systemctl restart traffic
-```
+### Reading the log
 
-After **every** change to the service file, run `sudo systemctl daemon-reload` first.
-Otherwise systemd keeps using the old version.
+Every 30 s each camera logs a line like
+`camera 4: 11.9 analysed frames/s, stride 2, load 0.71, 3 active tracks`:
 
-### Updating to a new version
+- `stride` – one frame in every `stride` is analysed (1 = every frame).
+- `load` – busy time per second of video. **Below 1 the camera keeps up** with the live stream.
 
-```bash
-cd ~/traffic-counter && git pull && sudo systemctl restart traffic
-```
+With `vid_stride: auto` (default) each camera picks the smallest stride that keeps `load`
+under 0.8: up at once when too slow, down one step per 30 s, so it settles within a few
+minutes. The streams arrive in ~7.5 s pieces, which is why frames are analysed in video
+order rather than "newest frame first". A fixed stride (e.g. `vid_stride: 3`) also works.
 
-Keep `data/traffic.db`. Only delete it (with the service stopped) if you **renumbered the
-camera ids** in `config.yaml`, because old rows would be shown under the wrong camera.
+`[http @ 0x...] Error reading HTTP response: End of file` lines are harmless retries unless
+followed by `stream ... is down`. In `htop`, about half the CPUs near 100 % (the model) and the
+rest lower (video decoding) is normal.
 
-### Checking that it works
+### Model backend
 
-```bash
-journalctl -u traffic -f                                          # live log (Ctrl+C stops watching, not the service)
-journalctl -u traffic --since "1 hour ago" | grep -cE "reconnect|is down"   # should be 0 or close to it
-sqlite3 data/traffic.db "select camera_id, count(*) from crossing_event group by 1"
-```
-
-Every 30 s each camera logs a line like:
-
-```
-camera 4: 11.9 analysed frames/s, stride 2, load 0.71, 3 active tracks
-```
-
-| Part | Meaning |
-|---|---|
-| `analysed frames/s` | frames the model looked at per second |
-| `stride` | every how many frames one is analysed (1 = every frame) |
-| `load` | busy time per second of video. **Below 1 = keeps up** with the live stream (the rest is waiting for the next video piece); above 1 = falls behind |
-
-With `vid_stride: auto` (the default) the camera picks the stride by itself: the smallest one
-whose predicted load stays under 0.8. It goes up at once when the camera gets too slow, and
-down by at most one step per 30 s when there is spare time. So after a start it may take a
-few minutes to settle. Nothing to tune.
-
-The cameras deliver video in pieces of about 7.5 s: a whole piece arrives at once, then
-nothing until the next one. That is why the camera does **not** just take the newest frame
-(it would skip most of each piece), and why `load` is measured against video time, not
-against the clock.
-
-To use a fixed stride instead, set for example `vid_stride: 3` (every 3rd frame). Then the
-camera must reach `stream fps / 3` analysed frames/s, e.g. 25 / 3 = 8.3. If it stays below
-that and keeps falling, it is too slow: raise `vid_stride` or run fewer cameras. If it is
-below but steady, the stream sends fewer frames than it says (camera 4 sends about 20 fps,
-not 24.3).
-
-Find a stream's fps without installing anything:
-
-```bash
-.venv/bin/python -c "import cv2,sys; c=cv2.VideoCapture(sys.argv[1]); print(c.get(cv2.CAP_PROP_FPS))" <stream-url>
-```
-
-The total speed of the server is shared between the cameras. A higher stride can miss some
-fast cars on a fast road, so do a short manual count (section 7) on the fastest camera.
-
-### Faster model backend
-
-`backend` in `config.yaml` chooses how the model runs. Measured on the AMD EPYC server
-with 4 cameras at once (yolo26n, `imgsz: [384, 640]`):
-
-| `backend` | analysed frames/s per camera |
-|---|---|
-| `pytorch` | 8.6 |
-| `onnx` | 10-12 (needs `pip install onnx onnxruntime onnxslim`) |
-| `openvino` (default) | 16 |
-
-These numbers are the model alone; reading the stream costs a little more on top.
-The first start after a change exports the model once (a few seconds), as for example
-`yolo26n_384x640_openvino_model/`. Changing `imgsz` creates a new export by itself. If the
-export fails, the log says so and the counter runs on `pytorch` instead.
-OpenVINO is made for x86 processors (Intel / AMD). On an Apple Silicon Mac it is slower
-than `pytorch`, so use `backend: pytorch` there if you run the counter on a Mac.
-
-### One CPU core per camera (`pin_cores`)
-
-On Linux each camera process is locked to its own physical CPU core (both of its
-hyperthreads), for example camera 1 on CPUs 0 and 4. The log shows it:
-`camera 1 started (..., CPUs 0,4, ...)`. Without this, OpenVINO in every camera picks the
-same CPUs and the cameras crowd onto half of the CPUs (in `htop`: CPUs 4-7 at 100 %,
-0-3 almost idle). Measured on the server with 4 cameras: 63.5 analysed frames/s in total
-without, 77.4 with (+22 %). With fewer cameras than cores each camera gets several cores;
-with more, they share. Set `pin_cores: false` to turn it off. On macOS it does nothing.
-
-Lines like `[http @ 0x...] Error reading HTTP response: End of file` in the log come from the
-video library when the camera server cuts one download short. They are retried by
-themselves and are harmless unless they are followed by `stream ... is down`.
+`backend: openvino` (default) runs the model through OpenVINO: on the AMD EPYC server with
+4 cameras, 16 instead of 8.6 analysed frames/s per camera with `pytorch`. The model is exported
+once at start-up (e.g. `yolo26n_384x640_openvino_model/`); if that fails, the counter runs on
+`pytorch`. On an Apple Silicon Mac OpenVINO is slower, so use `backend: pytorch` there.
 
 ---
 

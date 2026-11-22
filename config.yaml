@@ -15,11 +15,10 @@ defaults:
   model: yolo26n.pt           # downloaded by ultralytics on first use
   fallback_model: yolo11n.pt  # used if the main model cannot be loaded
   conf: 0.1                   # low on purpose: ByteTrack stage 2 needs boxes scoring 0.1-0.25 (see worker.py)
-  backend: openvino           # pytorch | onnx | openvino. Exported once at start-up; on the AMD EPYC server openvino is 1.85x faster than pytorch
-  imgsz: [384, 640]           # [height, width] the model sees. 16:9 frames need no padding at this size
-  vid_stride: auto            # auto = analyse as many frames as the CPU allows without falling behind; or a fixed number (3 = every 3rd frame)
-  pin_cores: true             # Linux: give each camera its own physical CPU core(s); +22 % frames on the server
-  line_margin_px: 6           # a crossing counts only once the box bottom is this many pixels past the line
+  backend: openvino           # openvino (x86 server) or pytorch (Mac)
+  imgsz: [384, 640]           # [height, width]; fits 16:9 frames without padding
+  vid_stride: auto            # auto, or a fixed number (3 = every 3rd frame)
+  line_margin_px: 6           # count only once the box bottom is this far past the line
   classes: [0, 1, 2, 3, 5, 7] # COCO: person, bicycle, car, motorcycle, bus, truck
   db_path: data/traffic.db    # relative to this file
   timezone: Europe/Sofia      # reports only; the database is always UTC

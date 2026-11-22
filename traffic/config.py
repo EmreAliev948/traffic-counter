@@ -17,7 +17,7 @@ class ConfigError(ValueError):
     """Raised when config.yaml is missing or invalid."""
 
 
-BACKENDS = ("pytorch", "onnx", "openvino")
+BACKENDS = ("pytorch", "openvino")
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,6 @@ class Defaults:
     imgsz: int | tuple[int, int] = 640
     vid_stride: int | None = None  # None = "auto" (see traffic/stride.py)
     line_margin_px: float = 6.0
-    pin_cores: bool = True  # Linux: each camera process gets its own physical core(s), see traffic/cpu.py
     classes: tuple[int, ...] = (0, 1, 2, 3, 5, 7)
     db_path: Path = Path("data/traffic.db")
     timezone: str = "UTC"
@@ -106,17 +105,10 @@ def _parse_defaults(raw: dict[str, Any], base_dir: Path) -> Defaults:
         imgsz=imgsz,
         vid_stride=vid_stride,
         line_margin_px=line_margin_px,
-        pin_cores=_parse_bool(raw.get("pin_cores", d.pin_cores), "pin_cores"),
         classes=tuple(classes),
         db_path=db_path if db_path.is_absolute() else base_dir / db_path,
         timezone=str(raw.get("timezone", d.timezone)),
     )
-
-
-def _parse_bool(raw: Any, key: str) -> bool:
-    if not isinstance(raw, bool):
-        raise ConfigError(f"defaults.{key} must be true or false, got {raw!r}")
-    return raw
 
 
 def _parse_imgsz(raw: Any) -> int | tuple[int, int]:
