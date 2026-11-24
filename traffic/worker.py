@@ -34,6 +34,7 @@ FLUSH_EVERY_S = 2.0
 FLUSH_EVERY_N = 100
 HEALTH_EVERY_S = 30.0
 RESTART_DELAY_S = 10.0
+PREVIEW_LATE_S = 1.0   # a preview frame this late (or a pts jump this big) restarts the playback clock
 
 TrackFn = Callable[[np.ndarray], list[TrackedBox]]
 WindowFn = Callable[[float, int, float], str]  # (wall_s, analysed, analyse_s) -> text for the log
@@ -58,6 +59,33 @@ class StrideControl:
             proposed = choose_stride(self.stream.stride, stats, wall_s, analysed, analyse_s)
             self.stream.stride = self.history.next(self.stream.stride, proposed)
         return f"stride {self.stream.stride}, load {load:.2f}"
+
+
+class PreviewClock:
+    """Plays preview frames at the speed of the video, not at the speed of the analysis.
+
+    The HLS cameras deliver a whole segment at once and the analysis gets through it in a
+    fraction of its length, so an unpaced preview fast-forwards and then freezes until the
+    next segment (see traffic/stride.py). `delay(pts)` says how long to hold each frame so
+    the frames appear at their video timestamps; the waiting leaves the next segments in
+    FFmpeg's buffer, so playback stays smooth after the first frame.
+
+    The clock restarts when a frame is late (slow CPU, late segment) or the timestamps jump
+    (reconnect, stream discontinuity): playback then continues from that frame.
+    """
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self.clock = clock
+        self.offset: float | None = None  # wall time - video time
+
+    def delay(self, pts: float | None) -> float:
+        if pts is None:
+            return 0.0
+        now = self.clock()
+        if self.offset is None or abs(pts + self.offset - now) > PREVIEW_LATE_S:
+            self.offset = now - pts
+            return 0.0
+        return max(0.0, pts + self.offset - now)
 
 
 class EventBuffer:
@@ -156,6 +184,7 @@ def process_frames(
     session: Callable[[], int] | None = None,
     margin_px: float = 6.0,
     on_window: WindowFn | None = None,
+    frame_pts: Callable[[], float | None] | None = None,
 ) -> None:
     """The main loop. `frames` is a Stream in production and a plain list in tests.
 
@@ -165,10 +194,15 @@ def process_frames(
 
     `on_window` is called every HEALTH_EVERY_S with the window's wall time, the number of
     analysed frames and the time spent analysing them (model + counting).
+
+    `frame_pts()` returns the current frame's video timestamp (s); the preview uses it to
+    play at real speed. Time spent in the preview is left out of the wall time given to
+    `on_window`, so pausing for playback never looks like load to the stride control.
     """
     counter = LineCounter(cam.line, margin_px=margin_px)
     buffer = EventBuffer(conn)
-    analysed, analyse_s, window_start = 0, 0.0, time.monotonic()
+    analysed, analyse_s, preview_s, window_start = 0, 0.0, 0.0, time.monotonic()
+    playback = PreviewClock()
     current_session = session() if session else 0
     try:
         for frame in frames:
@@ -193,8 +227,13 @@ def process_frames(
                 ))
                 log.info("camera %s: %s #%d %s", cam.id, c.class_name, c.track_id, c.direction)
             buffer.flush_if_due()
-            if preview and not show_preview(frame, boxes, cam):
-                break
+            if preview:
+                shown = time.monotonic()
+                wait_s = playback.delay(frame_pts() if frame_pts else None)
+                keep_going = show_preview(frame, boxes, cam, wait_s)
+                preview_s += time.monotonic() - shown
+                if not keep_going:
+                    break
             del frame  # drop the only reference: the image is freed right away
 
             analysed += 1
@@ -202,15 +241,16 @@ def process_frames(
             if elapsed >= HEALTH_EVERY_S:
                 fps = analysed / elapsed
                 db.insert_health(conn, cam.id, "up", round(fps, 2))
-                extra = f", {on_window(elapsed, analysed, analyse_s)}" if on_window else ""
+                extra = f", {on_window(elapsed - preview_s, analysed, analyse_s)}" if on_window else ""
                 log.info("camera %s: %.1f analysed frames/s%s, %d active tracks", cam.id, fps, extra, counter.active_tracks)
-                analysed, analyse_s, window_start = 0, 0.0, time.monotonic()
+                analysed, analyse_s, preview_s, window_start = 0, 0.0, 0.0, time.monotonic()
     finally:
         buffer.flush()
 
 
-def show_preview(frame: np.ndarray, boxes: list[TrackedBox], cam: Camera) -> bool:
-    """Draw boxes and the line in a window (on screen only). Returns False when 'q' is pressed."""
+def show_preview(frame: np.ndarray, boxes: list[TrackedBox], cam: Camera, wait_s: float = 0.0) -> bool:
+    """Draw boxes and the line in a window (on screen only), then keep the window responsive
+    for `wait_s` seconds. Returns False when 'q' is pressed."""
     import cv2
 
     draw_line(frame, cam.line)
@@ -219,7 +259,7 @@ def show_preview(frame: np.ndarray, boxes: list[TrackedBox], cam: Camera) -> boo
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(frame, f"{b.class_name} #{b.track_id}", (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
     cv2.imshow(f"camera {cam.id} (q = quit)", frame)
-    return cv2.waitKey(1) & 0xFF != ord("q")
+    return cv2.waitKey(max(1, round(wait_s * 1000))) & 0xFF != ord("q")
 
 
 def draw_line(frame: np.ndarray, line: tuple[tuple[int, int], tuple[int, int]]) -> None:
@@ -261,6 +301,7 @@ def run_camera(
         process_frames(
             stream.frames(), track, cam, conn, run_id, preview,
             session=lambda: stream.session, margin_px=defaults.line_margin_px, on_window=control,
+            frame_pts=lambda: stream.pts,
         )
         stop.set()  # a normal return means 'q' in the preview window: end the whole run
     finally:

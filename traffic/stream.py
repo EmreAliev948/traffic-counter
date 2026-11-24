@@ -105,6 +105,11 @@ class Stream:
         cap.release()
         return None
 
+    @property
+    def pts(self) -> float | None:
+        """Video timestamp (s) of the last yielded frame; restarts with every connection."""
+        return self._last_pts
+
     def take_stats(self) -> WindowStats:
         stats = WindowStats(frames=self._frames, video_s=self._video_s, wait_s=self._wait_s)
         self._frames, self._wait_s, self._video_s = 0, 0.0, 0.0
